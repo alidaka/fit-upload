@@ -1,0 +1,1 @@
+KERNEL=="sd*", ATTRS{idVendor}=="091e", ATTRS{idProduct}=="086d", RUN+="/home/augustus/code/upload.sh"
