@@ -1,5 +1,5 @@
 ACTION=="add", \
   KERNEL=="sd*", \
-  ATTRS{idVendor}=="*", \
-  ATTRS{idProduct}=="*", \
+  ATTRS{idVendor}=="091e", \
+  ATTRS{idProduct}=="086d", \
   RUN+="/home/augustus/code/fit-upload/upload.sh"
