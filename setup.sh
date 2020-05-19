@@ -26,16 +26,6 @@ sudo systemctl enable $SYSTEMD_FILE
 echo "Starting systemd service (requires sudo)..."
 sudo systemctl start $SYSTEMD_SERVICE
 
-exit 0
+# TODO: configure GDrive
 
-echo "Downloading Google Drive CLI..."
-mkdir -p out
-if [ ! -e out/gdrive ]
-then
-  wget https://github.com/gdrive-org/gdrive/releases/download/2.1.0/gdrive-linux-x64
-  mv gdrive-linux-x64 out/gdrive
-  chmod +x out/gdrive
-fi
-
-echo "Authenticating with Google Drive..."
-./out/gdrive about
+# TODO: configure Strava
