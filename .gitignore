@@ -1,5 +1,6 @@
 out
 fit-upload.service
+systemd.log
 
 
 #Added by cargo
