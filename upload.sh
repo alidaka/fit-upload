@@ -4,7 +4,7 @@ set -e
 echo "jabberwock"
 echo
 echo
-env >> ~/code/fit-upload/udev.log
+env >> /home/augustus/code/fit-upload/udev.log
 
 echo "Uploading to Google Drive..."
 #./out/gdrive
