@@ -1,10 +1,18 @@
 #!/usr/bin/env bash
 set -e
 
-echo "jabberwock"
-echo
-echo
-env >> /home/augustus/code/fit-upload/udev.log
+$SYSTEMD_UNIT=$1
+
+echo "---------------------------------" >> /home/augustus/code/fit-upload/systemd.log
+date >> /home/augustus/code/fit-upload/systemd.log
+echo >> /home/augustus/code/fit-upload/systemd.log
+echo >> /home/augustus/code/fit-upload/systemd.log
+echo "systemd unit is $SYSTEMD_UNIT" >> /home/augustus/code/fit-upload/systemd.log
+echo >> /home/augustus/code/fit-upload/systemd.log
+
+$GARMIN_DIRECTORY=$( systemctl show $SYSTEMD_UNIT --no-page | grep Where | cut --characters=7- )
+
+echo "mount point is: $GARMIN_DIRECTORY" >> /home/augustus/code/fit-upload/systemd.log
 
 echo "Uploading to Google Drive..."
 #./out/gdrive
