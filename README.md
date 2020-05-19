@@ -1,6 +1,3 @@
-https://github.com/gdrive-org/gdrive#downloads
+https://developers.google.com/drive/api/v3/about-sdk
 
 https://developers.strava.com/
-
-# TODO
-- prompt for correct USB device identification, and generate `udev` rule
