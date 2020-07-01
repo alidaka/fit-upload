@@ -3,7 +3,7 @@ use serde::{Serialize, Deserialize};
 use std::fs;
 
 const GDRIVE_UPLOAD_URL: &str = "https://www.googleapis.com/upload/drive/v3/files?uploadType=media";
-const STRAVA_UPLOAD_URL: &str = "";
+const STRAVA_UPLOAD_URL: &str = "https://www.strava.com/api/v3/uploads";
 const CONFIG_FILE: &str = "/home/augustus/.fit-uploadrc";
 const ACTIVITY_PATH: &str = "GARMIN/ACTIVITY";
 /*
