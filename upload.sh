@@ -14,8 +14,8 @@ GARMIN_DIRECTORY=$( systemctl show $SYSTEMD_UNIT --no-page | grep Where | cut --
 
 echo "mount point is: $GARMIN_DIRECTORY" >> /home/augustus/code/fit-upload/systemd.log
 
-echo "Uploading to Google Drive..."
-#./out/gdrive
+echo "Uploading..."
+/home/augustus/code/fit-upload/target/debug/fit-upload upload $GARMIN_DIRECTORY
 
 echo "Uploading to Strava..."
 #/media/augustus/GARMIN/GARMIN/ACTIVITY/*.FIT

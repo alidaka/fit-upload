@@ -5,6 +5,7 @@ use std::fs;
 const GDRIVE_UPLOAD_URL: &str = "https://www.googleapis.com/upload/drive/v3/files?uploadType=media";
 const STRAVA_UPLOAD_URL: &str = "";
 const CONFIG_FILE: &str = "/home/augustus/.fit-uploadrc";
+const ACTIVITY_PATH: &str = "GARMIN/ACTIVITY";
 /*
   curl -X POST https://www.strava.com/api/v3/uploads \
       -H "Authorization: Bearer abcd123" \
@@ -14,10 +15,12 @@ const CONFIG_FILE: &str = "/home/augustus/.fit-uploadrc";
 
 #[derive(Debug, StructOpt)]
 enum Command {
+    /// Local filesystem path with activities to upload
     Upload { path: String, },
+    /// Test that authorization works
     Test,
-    Configure,
-    T { params: Vec<String>, },
+    /// API keys (GDrive, then Strava)
+    Configure { params: Vec<String>, },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -26,7 +29,8 @@ struct Config {
     strava_key: String,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let command = Command::from_args();
 
     println!("input:");
@@ -34,9 +38,8 @@ fn main() {
 
     match command {
         Command::Upload{ path } => upload(&path),
-        Command::Test => println!("WIP"),
-        Command::Configure => println!("WIP"),
-        Command::T{ params } => t(&params[0], &params[1]),
+        Command::Test => test_auth().await,
+        Command::Configure{ params } => configure(&params[0], &params[1]),
     }
 }
 
@@ -46,12 +49,24 @@ fn upload(path: &str) {
     let config: Config = serde_json::from_str(&serialized).unwrap();
     println!("config that was read:");
     println!("{:?}", config);
+
+    println!("activity path:");
+    println!("{:?}", path);
 }
 
-fn configure() {
+async fn test_auth() {
+    println!("WIP");
+    let client = reqwest::Client::new();
+    let res = client.post(GDRIVE_UPLOAD_URL)
+        .header("Content-Type", "application/vnd.google-apps.file") // or ...vnd.google-apps.unknown?
+        .header("Content-Length", "MIME")
+        .body("")
+        .send()
+        .await;
+    res.expect("broken");
 }
 
-fn t(a: &str, b: &str) {
+fn configure(a: &str, b: &str) {
     let config = Config { gdrive_key: a.to_string(), strava_key: b.to_string() };
     let serialized = serde_json::to_string(&config).unwrap();
     fs::write(CONFIG_FILE, serialized).unwrap();
