@@ -1,5 +1,5 @@
 [package]
-name = "fit-uplaod"
+name = "fit-upload"
 version = "0.1.0"
 authors = ["alidaka <alidaka@gmail.com>"]
 edition = "2018"
