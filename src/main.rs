@@ -4,7 +4,7 @@ use std::fs;
 use oauth2::Config;
 use rouille::Response;
 use std::thread;
-use std::sync::mpsc::{channel, Sender, Receiver};
+use std::sync::mpsc::{sync_channel, SyncSender, Receiver};
 
 const GDRIVE_UPLOAD_URL: &str = "https://www.googleapis.com/upload/drive/v3/files?uploadType=media";
 const STRAVA_UPLOAD_URL: &str = "https://www.strava.com/api/v3/uploads";
@@ -42,14 +42,14 @@ async fn main() {
     println!("input:");
     println!("{:?}", command);
 
-    let (tx, rx): (Sender<&str>, Receiver<&str>) = channel();
+    let (tx, rx): (SyncSender<String>, Receiver<String>) = sync_channel(1);
 
-    let _handle = thread::spawn(|| {
+    let _handle = thread::spawn(move || {
+        let sender = tx.clone();
         rouille::start_server("localhost:9004", move |request| {
             println!("received {:?}", request);
-            let auth_code = request.get_param("code").unwrap();
-            println!("code param: {:?}", auth_code);
-            tx.send(&auth_code).unwrap();
+            let auth_code = request.get_param("code").expect("Failed to parse auth code from response");
+            tx.send(auth_code).expect("Failed to send auth code from oauth loopback thread to main thread");
             return Response::empty_204();
         });
     });
@@ -63,7 +63,7 @@ async fn main() {
     // handle.join().unwrap();
 }
 
-fn upload(path: &str) {
+fn upload(path: &String) {
     let config_data = fs::read(CONFIG_FILE).expect("Unable to read config file");
     let serialized = String::from_utf8(config_data).unwrap();
     let config: Configuration = serde_json::from_str(&serialized).unwrap();
@@ -74,7 +74,7 @@ fn upload(path: &str) {
     println!("{:?}", path);
 }
 
-async fn auth(rx: Receiver<&str>, client_id: &str, client_secret: &str) -> String {
+async fn auth(rx: Receiver<String>, client_id: &String, client_secret: &String) -> String {
     println!("Authorizing...");
 
     // Create an OAuth2 config by specifying the client ID, client secret, authorization URL and token URL.
@@ -87,29 +87,25 @@ async fn auth(rx: Receiver<&str>, client_id: &str, client_secret: &str) -> Strin
     // Set a state parameter (optional, but recommended).
     //config = config.set_state("1234");
 
-    // Generate the full authorization URL.
-    // This is the URL you should redirect the user to, in order to trigger the authorization process.
     println!("Browse to: {}", config.authorize_url());
 
-    let auth_code = rx.recv().unwrap();
-    // TODO: prompt user to hit enter?
-    let mut _line = String::new();
-    let _ = std::io::stdin().read_line(&mut _line).unwrap();
+    let auth_code = rx.recv().expect("Failed to receive auth code from oauth loopback thread");
 
     // Once the user has been redirected to the redirect URL, you'll have access to the authorization code.
     // Now you can trade it for an access token.
     return config.exchange_code(auth_code).unwrap().access_token;
 }
 
-async fn test_auth(rx: Receiver<&str>) {
+async fn test_auth(rx: Receiver<String>) {
     let config_data = fs::read(CONFIG_FILE).expect("Unable to read config file");
     let serialized = String::from_utf8(config_data).unwrap();
     let config: Configuration = serde_json::from_str(&serialized).unwrap();
 
     println!("WIP");
     let client = reqwest::Client::new();
-    auth(rx, &config.gdrive_client_id, &config.gdrive_client_secret).await;
+    let access_token = auth(rx, &config.gdrive_client_id, &config.gdrive_client_secret).await;
     println!("Authorized with GDrive");
+    println!("Access token: {}", access_token);
     for entry in fs::read_dir(&format!("{}/{}", "/home/augustus/temp/fit-testing", ACTIVITY_PATH)).unwrap() {
     //for entry in fs::read_dir(&format!("{}/{}", "/media/augustus/GARMIN", ACTIVITY_PATH)).unwrap() {
         let entry = entry.unwrap();
