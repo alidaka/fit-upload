@@ -2,6 +2,9 @@ use structopt::StructOpt;
 use serde::{Serialize, Deserialize};
 use std::fs;
 use oauth2::Config;
+use rouille::Response;
+use std::thread;
+use std::sync::mpsc::{channel, Sender, Receiver};
 
 const GDRIVE_UPLOAD_URL: &str = "https://www.googleapis.com/upload/drive/v3/files?uploadType=media";
 const STRAVA_UPLOAD_URL: &str = "https://www.strava.com/api/v3/uploads";
@@ -39,11 +42,25 @@ async fn main() {
     println!("input:");
     println!("{:?}", command);
 
+    let (tx, rx): (Sender<&str>, Receiver<&str>) = channel();
+
+    let _handle = thread::spawn(|| {
+        rouille::start_server("localhost:9004", move |request| {
+            println!("received {:?}", request);
+            let auth_code = request.get_param("code").unwrap();
+            println!("code param: {:?}", auth_code);
+            tx.send(&auth_code).unwrap();
+            return Response::empty_204();
+        });
+    });
+
     match command {
         Command::Upload{ path } => upload(&path),
-        Command::Test => test_auth().await,
+        Command::Test => test_auth(rx).await,
         Command::Configure{ params } => configure(&params[0], &params[1]),
     }
+
+    // handle.join().unwrap();
 }
 
 fn upload(path: &str) {
@@ -57,37 +74,44 @@ fn upload(path: &str) {
     println!("{:?}", path);
 }
 
-async fn auth() -> String {
+async fn auth(rx: Receiver<&str>, client_id: &str, client_secret: &str) -> String {
     println!("Authorizing...");
 
     // Create an OAuth2 config by specifying the client ID, client secret, authorization URL and token URL.
-    let mut config = Config::new("client_id", "client_secret", "http://authorize", "http://token");
-
-    // Set the desired scopes.
-    config = config.add_scope("read");
-    config = config.add_scope("write");
+    let mut config = Config::new(client_id, client_secret, "https://accounts.google.com/o/oauth2/v2/auth", "https://oauth2.googleapis.com/token");
+    config = config.add_scope("https://www.googleapis.com/auth/drive.file");
 
     // Set the URL the user will be redirected to after the authorization process.
-    config = config.set_redirect_url("http://redirect");
+    config = config.set_redirect_url("http://127.0.0.1:9004");
 
     // Set a state parameter (optional, but recommended).
-    config = config.set_state("1234");
+    //config = config.set_state("1234");
 
     // Generate the full authorization URL.
     // This is the URL you should redirect the user to, in order to trigger the authorization process.
     println!("Browse to: {}", config.authorize_url());
 
+    let auth_code = rx.recv().unwrap();
     // TODO: prompt user to hit enter?
+    let mut _line = String::new();
+    let _ = std::io::stdin().read_line(&mut _line).unwrap();
 
     // Once the user has been redirected to the redirect URL, you'll have access to the authorization code.
     // Now you can trade it for an access token.
-    return config.exchange_code("some authorization code").unwrap().access_token;
+    return config.exchange_code(auth_code).unwrap().access_token;
 }
 
-async fn test_auth() {
+async fn test_auth(rx: Receiver<&str>) {
+    let config_data = fs::read(CONFIG_FILE).expect("Unable to read config file");
+    let serialized = String::from_utf8(config_data).unwrap();
+    let config: Configuration = serde_json::from_str(&serialized).unwrap();
+
     println!("WIP");
     let client = reqwest::Client::new();
-    for entry in fs::read_dir(&format!("{}/{}", "/media/augustus/GARMIN", ACTIVITY_PATH)).unwrap() {
+    auth(rx, &config.gdrive_client_id, &config.gdrive_client_secret).await;
+    println!("Authorized with GDrive");
+    for entry in fs::read_dir(&format!("{}/{}", "/home/augustus/temp/fit-testing", ACTIVITY_PATH)).unwrap() {
+    //for entry in fs::read_dir(&format!("{}/{}", "/media/augustus/GARMIN", ACTIVITY_PATH)).unwrap() {
         let entry = entry.unwrap();
         let file_contents = fs::read(entry.path()).unwrap();
 
@@ -119,7 +143,7 @@ async fn test_auth() {
 }
 
 fn configure(a: &str, b: &str) {
-    let config = Configuration { gdrive_client_id: a.to_string(), strava_client_id: b.to_string() };
+    let config = Configuration { gdrive_client_id: a.to_string(), gdrive_client_secret: b.to_string(), strava_client_id: "".to_string(), strava_client_secret: "".to_string() };
     let serialized = serde_json::to_string(&config).unwrap();
     fs::write(CONFIG_FILE, serialized).unwrap();
 }
