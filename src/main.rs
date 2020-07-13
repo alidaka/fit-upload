@@ -45,7 +45,6 @@ async fn main() {
     let (tx, rx): (SyncSender<String>, Receiver<String>) = sync_channel(1);
 
     let _handle = thread::spawn(move || {
-        let sender = tx.clone();
         rouille::start_server("localhost:9004", move |request| {
             println!("received {:?}", request);
             let auth_code = request.get_param("code").expect("Failed to parse auth code from response");
@@ -80,8 +79,6 @@ async fn auth(rx: Receiver<String>, client_id: &String, client_secret: &String) 
     // Create an OAuth2 config by specifying the client ID, client secret, authorization URL and token URL.
     let mut config = Config::new(client_id, client_secret, "https://accounts.google.com/o/oauth2/v2/auth", "https://oauth2.googleapis.com/token");
     config = config.add_scope("https://www.googleapis.com/auth/drive.file");
-
-    // Set the URL the user will be redirected to after the authorization process.
     config = config.set_redirect_url("http://127.0.0.1:9004");
 
     // Set a state parameter (optional, but recommended).
@@ -111,16 +108,15 @@ async fn test_auth(rx: Receiver<String>) {
         let entry = entry.unwrap();
         let file_contents = fs::read(entry.path()).unwrap();
 
-        println!("Uploading file to GDrive: {:?}", entry.path());
-        /*
         let gdrive_result = client.post(GDRIVE_UPLOAD_URL)
-            .header("Content-Type", "application/vnd.google-apps.file") // or ...vnd.google-apps.unknown?
             .header("Content-Length", entry.metadata().unwrap().len())
+            .bearer_auth(&access_token)
             .body(file_contents)
             .send()
             .await;
-        println!("{:?}", gdrive_result.unwrap());
-        */
+        let res = gdrive_result.unwrap();
+        println!("GDrive result: {:?}", &res);
+        println!("GDrive body: {:?}", res.text().await);
         // TODO: check that the file creation time and filename are correct
 
         println!("Uploading file to Strava: {:?}", entry.path());
