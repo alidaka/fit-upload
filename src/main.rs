@@ -85,15 +85,12 @@ fn upload(path: &String) {
     println!("{:?}", path);
 }
 
-async fn auth(rx: Receiver<String>, client_id: &String, client_secret: &String) -> String {
+async fn auth(rx: &Receiver<String>, client_id: &String, client_secret: &String, auth_url: &String, token_url: &String, scope: &String) -> String {
     println!("Authorizing...");
 
-    let mut config = Config::new(client_id, client_secret, "https://accounts.google.com/o/oauth2/v2/auth", "https://oauth2.googleapis.com/token");
-    config = config.add_scope("https://www.googleapis.com/auth/drive.file");
+    let mut config = Config::new(client_id, client_secret, auth_url, token_url);
+    config = config.add_scope(scope);
     config = config.set_redirect_url("http://127.0.0.1:9004");
-
-    // Set a state parameter (optional, but recommended).
-    //config = config.set_state("1234");
 
     println!("Browse to: {}", config.authorize_url());
 
@@ -132,8 +129,15 @@ async fn test_auth(rx: Receiver<String>) {
     let serialized = String::from_utf8(config_data).unwrap();
     let config: Configuration = serde_json::from_str(&serialized).unwrap();
 
+    let gdrive_access_token = auth(
+        &rx, &config.gdrive_client_id, &config.gdrive_client_secret,
+        &String::from("https://accounts.google.com/o/oauth2/v2/auth"), &String::from("https://oauth2.googleapis.com/token"), &String::from("https://www.googleapis.com/auth/drive.file")).await;
+
+    let strava_access_token = auth(
+        &rx, &config.strava_client_id, &config.strava_client_secret,
+        &String::from("https://www.strava.com/oauth/authorize"), &String::from("https://www.strava.com/oauth/token"), &String::from("activity:write")).await;
+
     let client = reqwest::Client::new();
-    let access_token = auth(rx, &config.gdrive_client_id, &config.gdrive_client_secret).await;
     for entry in fs::read_dir(&format!("{}/{}", "/home/augustus/temp/fit-testing", ACTIVITY_PATH)).unwrap() {
     //for entry in fs::read_dir(&format!("{}/{}", "/media/augustus/GARMIN", ACTIVITY_PATH)).unwrap() {
         let path = entry.unwrap().path();
@@ -144,7 +148,7 @@ async fn test_auth(rx: Receiver<String>) {
         let gdrive_result = client.post(GDRIVE_UPLOAD_URL)
             .header("Content-Type", "multipart/related; boundary=fiiiiit")
             .header("Content-Length", gdrive_body.len())
-            .bearer_auth(&access_token)
+            .bearer_auth(&gdrive_access_token)
             .body(gdrive_body)
             .send()
             .await;
@@ -154,27 +158,27 @@ async fn test_auth(rx: Receiver<String>) {
 
         println!("Uploading file to Strava: {:?}", path);
         /*
-        let form = reqwest::multipart::Form::new()
-            .text("data_type", "fit")
-            .part("file", reqwest::multipart::Part::bytes(file_contents));
-        let strava_result = client.post(STRAVA_UPLOAD_URL)
-            .bearer_auth("abc123") // maybe? needs the access_token
-            .multipart(form)
-            .send()
-            .await;
-        println!("{:?}", strava_result.unwrap());
-        */
+           let form = reqwest::multipart::Form::new()
+           .text("data_type", "fit")
+           .part("file", reqwest::multipart::Part::bytes(file_contents));
+           let strava_result = client.post(STRAVA_UPLOAD_URL)
+           .bearer_auth("abc123") // maybe? needs the access_token
+           .multipart(form)
+           .send()
+           .await;
+           println!("{:?}", strava_result.unwrap());
+           */
     }
-}
+    }
 
-fn configure(a: &str, b: &str, c: &str) {
-    let config = Configuration {
-        gdrive_client_id: a.to_string(),
-        gdrive_client_secret: b.to_string(),
-        gdrive_folder: c.to_string(),
-        strava_client_id: "".to_string(),
-        strava_client_secret: "".to_string(),
-    };
-    let serialized = serde_json::to_string(&config).unwrap();
-    fs::write(CONFIG_FILE, serialized).unwrap();
-}
+    fn configure(a: &str, b: &str, c: &str) {
+        let config = Configuration {
+            gdrive_client_id: a.to_string(),
+            gdrive_client_secret: b.to_string(),
+            gdrive_folder: c.to_string(),
+            strava_client_id: "".to_string(),
+            strava_client_secret: "".to_string(),
+        };
+        let serialized = serde_json::to_string(&config).unwrap();
+        fs::write(CONFIG_FILE, serialized).unwrap();
+    }
