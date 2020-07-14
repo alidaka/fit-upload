@@ -61,6 +61,8 @@ async fn main() {
             println!("received {:?}", request);
             let auth_code = request.get_param("code").expect("Failed to parse auth code from response");
             tx.send(auth_code).expect("Failed to send auth code from oauth loopback thread to main thread");
+
+            // TODO: if we actually return a body here, can we make the browser window go away, or at least nicer?
             return Response::empty_204();
         });
     });
@@ -136,6 +138,7 @@ async fn test_auth(rx: Receiver<String>) {
     let strava_access_token = auth(
         &rx, &config.strava_client_id, &config.strava_client_secret,
         &String::from("https://www.strava.com/oauth/authorize"), &String::from("https://www.strava.com/oauth/token"), &String::from("activity:write")).await;
+    println!("Strava access token: {:?}", strava_access_token);
 
     let client = reqwest::Client::new();
     for entry in fs::read_dir(&format!("{}/{}", "/home/augustus/temp/fit-testing", ACTIVITY_PATH)).unwrap() {
@@ -157,28 +160,28 @@ async fn test_auth(rx: Receiver<String>) {
         println!("GDrive body: {:?}", res.text().await);
 
         println!("Uploading file to Strava: {:?}", path);
-        /*
-           let form = reqwest::multipart::Form::new()
-           .text("data_type", "fit")
-           .part("file", reqwest::multipart::Part::bytes(file_contents));
-           let strava_result = client.post(STRAVA_UPLOAD_URL)
-           .bearer_auth("abc123") // maybe? needs the access_token
-           .multipart(form)
-           .send()
-           .await;
-           println!("{:?}", strava_result.unwrap());
-           */
+        let form = reqwest::multipart::Form::new()
+            .text("data_type", "fit")
+            .part("file", reqwest::multipart::Part::bytes(file_contents));
+        let strava_result = client.post(STRAVA_UPLOAD_URL)
+            .bearer_auth(&strava_access_token)
+            .multipart(form)
+            .send()
+            .await;
+        let sres = strava_result.unwrap();
+        println!("Strava result: {:?}", &sres);
+        println!("Strava body: {:?}", sres.text().await);
     }
-    }
+}
 
-    fn configure(a: &str, b: &str, c: &str) {
-        let config = Configuration {
-            gdrive_client_id: a.to_string(),
-            gdrive_client_secret: b.to_string(),
-            gdrive_folder: c.to_string(),
-            strava_client_id: "".to_string(),
-            strava_client_secret: "".to_string(),
-        };
-        let serialized = serde_json::to_string(&config).unwrap();
-        fs::write(CONFIG_FILE, serialized).unwrap();
-    }
+fn configure(a: &str, b: &str, c: &str) {
+    let config = Configuration {
+        gdrive_client_id: a.to_string(),
+        gdrive_client_secret: b.to_string(),
+        gdrive_folder: c.to_string(),
+        strava_client_id: "".to_string(),
+        strava_client_secret: "".to_string(),
+    };
+    let serialized = serde_json::to_string(&config).unwrap();
+    fs::write(CONFIG_FILE, serialized).unwrap();
+}
