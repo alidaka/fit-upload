@@ -101,6 +101,31 @@ async fn auth(rx: Receiver<String>, client_id: &String, client_secret: &String) 
     return config.exchange_code(auth_code).unwrap().access_token;
 }
 
+fn gdrive_body(config: &Configuration, path: &std::path::Path, file_contents: &Vec<u8>) -> Vec<u8> {
+    let parent_folder_ids = vec![config.gdrive_folder.clone()];
+    let file_metadata = fs::metadata(&path).unwrap();
+    let gdrive_metadata = GDriveMetadata {
+        name: path.file_name().unwrap().to_str().unwrap().to_string(),
+        parents: parent_folder_ids.clone(),
+        modified_time: DateTime::from(file_metadata.modified().unwrap())
+    };
+
+    return [
+        "--fiiiiit\n".as_bytes(),
+        "Content-Type: application/json; charset=UTF-8\n".as_bytes(),
+        "\n".as_bytes(),
+        serde_json::to_string(&gdrive_metadata).unwrap().as_bytes(),
+        "\n".as_bytes(),
+        "\n".as_bytes(),
+        "--fiiiiit\n".as_bytes(),
+        "Content-Type: application/x-binary\n".as_bytes(),
+        "\n".as_bytes(),
+        &file_contents,
+        "\n".as_bytes(),
+        "--fiiiiit--\n".as_bytes(),
+    ].concat();
+}
+
 async fn test_auth(rx: Receiver<String>) {
     let config_data = fs::read(CONFIG_FILE).expect("Unable to read config file");
     let serialized = String::from_utf8(config_data).unwrap();
@@ -108,33 +133,12 @@ async fn test_auth(rx: Receiver<String>) {
 
     let client = reqwest::Client::new();
     let access_token = auth(rx, &config.gdrive_client_id, &config.gdrive_client_secret).await;
-    let parent_folder_ids = vec![config.gdrive_folder];
     for entry in fs::read_dir(&format!("{}/{}", "/home/augustus/temp/fit-testing", ACTIVITY_PATH)).unwrap() {
     //for entry in fs::read_dir(&format!("{}/{}", "/media/augustus/GARMIN", ACTIVITY_PATH)).unwrap() {
         let path = entry.unwrap().path();
-        let file_metadata = fs::metadata(&path).unwrap();
         let file_contents = fs::read(&path).unwrap();
 
-        let gdrive_metadata = GDriveMetadata {
-            name: path.file_name().unwrap().to_str().unwrap().to_string(),
-            parents: parent_folder_ids.clone(),
-            modified_time: DateTime::from(file_metadata.modified().unwrap())
-        };
-
-        let gdrive_body = [
-            "--fiiiiit\n".as_bytes(),
-            "Content-Type: application/json; charset=UTF-8\n".as_bytes(),
-            "\n".as_bytes(),
-            serde_json::to_string(&gdrive_metadata).unwrap().as_bytes(),
-            "\n".as_bytes(),
-            "\n".as_bytes(),
-            "--fiiiiit\n".as_bytes(),
-            "Content-Type: application/x-binary\n".as_bytes(),
-            "\n".as_bytes(),
-            &file_contents,
-            "\n".as_bytes(),
-            "--fiiiiit--\n".as_bytes(),
-        ].concat();
+        let gdrive_body = gdrive_body(&config, &path, &file_contents);
 
         let gdrive_result = client.post(GDRIVE_UPLOAD_URL)
             .header("Content-Type", "multipart/related; boundary=fiiiiit")
