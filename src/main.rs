@@ -5,8 +5,9 @@ use oauth2::Config;
 use rouille::Response;
 use std::thread;
 use std::sync::mpsc::{sync_channel, SyncSender, Receiver};
+use chrono::{DateTime, Local};
 
-const GDRIVE_UPLOAD_URL: &str = "https://www.googleapis.com/upload/drive/v3/files?uploadType=media";
+const GDRIVE_UPLOAD_URL: &str = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart";
 const STRAVA_UPLOAD_URL: &str = "https://www.strava.com/api/v3/uploads";
 const CONFIG_FILE: &str = "/home/augustus/.fit-uploadrc";
 const ACTIVITY_PATH: &str = "GARMIN/ACTIVITY";
@@ -31,8 +32,19 @@ enum Command {
 struct Configuration {
     gdrive_client_id: String,
     gdrive_client_secret: String,
+    gdrive_folder: String,
     strava_client_id: String,
     strava_client_secret: String,
+}
+
+#[derive(Debug, Serialize)]
+struct GDriveMetadata {
+    name: String,
+
+    parents: Vec<String>,
+
+    #[serde(rename(serialize="modifiedTime"))]
+    modified_time: DateTime<Local>, // TODO: it's possible this should be Utc
 }
 
 #[tokio::main]
@@ -56,7 +68,7 @@ async fn main() {
     match command {
         Command::Upload{ path } => upload(&path),
         Command::Test => test_auth(rx).await,
-        Command::Configure{ params } => configure(&params[0], &params[1]),
+        Command::Configure{ params } => configure(&params[0], &params[1], &params[2]),
     }
 
     // handle.join().unwrap();
@@ -76,7 +88,6 @@ fn upload(path: &String) {
 async fn auth(rx: Receiver<String>, client_id: &String, client_secret: &String) -> String {
     println!("Authorizing...");
 
-    // Create an OAuth2 config by specifying the client ID, client secret, authorization URL and token URL.
     let mut config = Config::new(client_id, client_secret, "https://accounts.google.com/o/oauth2/v2/auth", "https://oauth2.googleapis.com/token");
     config = config.add_scope("https://www.googleapis.com/auth/drive.file");
     config = config.set_redirect_url("http://127.0.0.1:9004");
@@ -87,9 +98,6 @@ async fn auth(rx: Receiver<String>, client_id: &String, client_secret: &String) 
     println!("Browse to: {}", config.authorize_url());
 
     let auth_code = rx.recv().expect("Failed to receive auth code from oauth loopback thread");
-
-    // Once the user has been redirected to the redirect URL, you'll have access to the authorization code.
-    // Now you can trade it for an access token.
     return config.exchange_code(auth_code).unwrap().access_token;
 }
 
@@ -98,28 +106,48 @@ async fn test_auth(rx: Receiver<String>) {
     let serialized = String::from_utf8(config_data).unwrap();
     let config: Configuration = serde_json::from_str(&serialized).unwrap();
 
-    println!("WIP");
     let client = reqwest::Client::new();
     let access_token = auth(rx, &config.gdrive_client_id, &config.gdrive_client_secret).await;
-    println!("Authorized with GDrive");
-    println!("Access token: {}", access_token);
+    let parent_folder_ids = vec![config.gdrive_folder];
     for entry in fs::read_dir(&format!("{}/{}", "/home/augustus/temp/fit-testing", ACTIVITY_PATH)).unwrap() {
     //for entry in fs::read_dir(&format!("{}/{}", "/media/augustus/GARMIN", ACTIVITY_PATH)).unwrap() {
-        let entry = entry.unwrap();
-        let file_contents = fs::read(entry.path()).unwrap();
+        let path = entry.unwrap().path();
+        let file_metadata = fs::metadata(&path).unwrap();
+        let file_contents = fs::read(&path).unwrap();
+
+        let gdrive_metadata = GDriveMetadata {
+            name: path.file_name().unwrap().to_str().unwrap().to_string(),
+            parents: parent_folder_ids.clone(),
+            modified_time: DateTime::from(file_metadata.modified().unwrap())
+        };
+
+        let gdrive_body = [
+            "--fiiiiit\n".as_bytes(),
+            "Content-Type: application/json; charset=UTF-8\n".as_bytes(),
+            "\n".as_bytes(),
+            serde_json::to_string(&gdrive_metadata).unwrap().as_bytes(),
+            "\n".as_bytes(),
+            "\n".as_bytes(),
+            "--fiiiiit\n".as_bytes(),
+            "Content-Type: application/x-binary\n".as_bytes(),
+            "\n".as_bytes(),
+            &file_contents,
+            "\n".as_bytes(),
+            "--fiiiiit--\n".as_bytes(),
+        ].concat();
 
         let gdrive_result = client.post(GDRIVE_UPLOAD_URL)
-            .header("Content-Length", entry.metadata().unwrap().len())
+            .header("Content-Type", "multipart/related; boundary=fiiiiit")
+            .header("Content-Length", gdrive_body.len())
             .bearer_auth(&access_token)
-            .body(file_contents)
+            .body(gdrive_body)
             .send()
             .await;
         let res = gdrive_result.unwrap();
         println!("GDrive result: {:?}", &res);
         println!("GDrive body: {:?}", res.text().await);
-        // TODO: check that the file creation time and filename are correct
 
-        println!("Uploading file to Strava: {:?}", entry.path());
+        println!("Uploading file to Strava: {:?}", path);
         /*
         let form = reqwest::multipart::Form::new()
             .text("data_type", "fit")
@@ -134,8 +162,14 @@ async fn test_auth(rx: Receiver<String>) {
     }
 }
 
-fn configure(a: &str, b: &str) {
-    let config = Configuration { gdrive_client_id: a.to_string(), gdrive_client_secret: b.to_string(), strava_client_id: "".to_string(), strava_client_secret: "".to_string() };
+fn configure(a: &str, b: &str, c: &str) {
+    let config = Configuration {
+        gdrive_client_id: a.to_string(),
+        gdrive_client_secret: b.to_string(),
+        gdrive_folder: c.to_string(),
+        strava_client_id: "".to_string(),
+        strava_client_secret: "".to_string(),
+    };
     let serialized = serde_json::to_string(&config).unwrap();
     fs::write(CONFIG_FILE, serialized).unwrap();
 }
